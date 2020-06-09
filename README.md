@@ -1,7 +1,7 @@
 # Theoretical Guarantees for Learning Conditional Expectation using Controlled ODE-RNN
 
-This repository is the official implementation of 
-[Theoretical Guarantees for Learning Conditional Expectation using Controlled ODE-RNN](todo). 
+This repository is the official implementation of
+[Theoretical Guarantees for Learning Conditional Expectation using Controlled ODE-RNN](https://arxiv.org/abs/2006.04727).
 
 
 ## Requirements
@@ -17,7 +17,7 @@ pip install -r requirements.txt
 
 ## Training & Testing
 
-To train and test the model(s) of the paper, run these commands (other 
+To train and test the model(s) of the paper, run these commands (other
 hyperparameters can be changed in the main section of demo.py):
 
 go to the source directory:
@@ -40,9 +40,9 @@ for Ornstein-Uhlenbeck model:
 python demo.py --dataset='OrnsteinUhlenbeck'
 ```
 
-If no dataset for the model was generated yet, it will be generated 
+If no dataset for the model was generated yet, it will be generated
 automatically before the training starts.
-ATTENTION: if you run the demo for a pretrained model first, a dataset with 
+ATTENTION: if you run the demo for a pretrained model first, a dataset with
 only 100 samples (instead of 20'000) will be generated for plotting. This should
 be deleted before training a new model, such that a bigger dataset is generated
 and used.
@@ -59,7 +59,7 @@ and the training progress is printed.
 
 Pre-trained models for each of the 3 stochastic models are distributed with the
 code and saved in "../data/saved_models/id-x" for x=1,2,3.
-These pre-trained models can be loaded and used to generate sample paths with 
+These pre-trained models can be loaded and used to generate sample paths with
 the following commands:
 
 go to the source directory:
@@ -82,10 +82,10 @@ python demo.py --model_id=2
 python demo.py --model_id=3
 ```
 
-If no dataset for the model was generated yet, a small version of the dataset 
-with 100 samples will be generated automatically, such that plots can be 
+If no dataset for the model was generated yet, a small version of the dataset
+with 100 samples will be generated automatically, such that plots can be
 produced.
-ATTENTION: this dataset should be replaced with a bigger one for training (the 
+ATTENTION: this dataset should be replaced with a bigger one for training (the
 datasets are saved in "../data/training_data/" and can be deleted there).
 
 The pretrained models are loaded and used for plotting. No training. The plots
@@ -113,10 +113,15 @@ Ornstein-Uhlenbeck:
 
 This code can be used in accordance with the LICENSE.txt.
 
-If you find this code useful, please cite our paper: [Theoretical Guarantees for Learning Conditional Expectation using Controlled ODE-RNN](todo).
+If you find this code useful, please cite our paper: [Theoretical Guarantees for Learning Conditional Expectation using Controlled ODE-RNN](https://arxiv.org/abs/2006.04727).
 
 ```citation
-
+@misc{Controlled_ODE_RNN_2020,
+    title={Theoretical Guarantees for Learning Conditional Expectation using Controlled ODE-RNN},
+    author={Calypso Herrera and Florian Krach and Josef Teichmann},
+    year={2020},
+    journal={arXiv:2006.04727}
+}
 ```
 
 
@@ -125,7 +130,3 @@ Parts of this code are base on the code of: https://github.com/edebrouwer/gru_od
 
 The GIFs of the training progress were generated with imageio:
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.3674137.svg)](https://doi.org/10.5281/zenodo.3674137)
-
-
-
-
