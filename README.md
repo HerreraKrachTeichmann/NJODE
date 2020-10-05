@@ -193,15 +193,15 @@ during training (i.e. increasing umber of epochs) for the 3 synthetic datasets.
 
 Black-Scholes:
 
-![alt text](data/model_id-1_training-progress-path-1.gif)
+![alt text](data/model_id-1_training-progress.gif)
 
 Heston:
 
-![alt text](data/model_id-2_training-progress-path-3.gif)
+![alt text](data/model_id-2_training-progress.gif)
 
 Ornstein-Uhlenbeck:
 
-![alt text](data/model_id-3_training-progress-path-0.gif)
+![alt text](data/model_id-3_training-progress.gif)
 
 
 
