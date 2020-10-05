@@ -1,0 +1,45 @@
+Metadata-Version: 1.1
+Name: torchdiffeq
+Version: 0.0.1
+Summary: ODE solvers and adjoint sensitivity analysis in PyTorch.
+Home-page: https://github.com/rtqichen/torchdiffeq
+Author: Ricky Tian Qi Chen
+Author-email: rtqichen@cs.toronto.edu
+License: UNKNOWN
+Description: UNKNOWN
+Platform: UNKNOWN
+Classifier: P
+Classifier: r
+Classifier: o
+Classifier: g
+Classifier: r
+Classifier: a
+Classifier: m
+Classifier: m
+Classifier: i
+Classifier: n
+Classifier: g
+Classifier:  
+Classifier: L
+Classifier: a
+Classifier: n
+Classifier: g
+Classifier: u
+Classifier: a
+Classifier: g
+Classifier: e
+Classifier:  
+Classifier: :
+Classifier: :
+Classifier:  
+Classifier: P
+Classifier: y
+Classifier: t
+Classifier: h
+Classifier: o
+Classifier: n
+Classifier:  
+Classifier: :
+Classifier: :
+Classifier:  
+Classifier: 3
