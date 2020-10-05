@@ -311,7 +311,6 @@ def train(
             desc = (df_overview['description'].loc[
                 df_overview['id'] == model_id]).values[0]
             params_dict = json.loads(desc)
-            options = params_dict['options']
     initial_print += '\nmodel params:\n{}'.format(desc)
     if 'resume_training' in options and options['resume_training'] is True:
         resume_training = True
@@ -333,7 +332,7 @@ def train(
     # get the model & optimizer
     if 'other_model' not in options:
         model = models.NJODE(**params_dict)
-        model_name = 'controlled ODE-RNN'
+        model_name = 'NJODE'
     elif options['other_model'] == "GRU_ODE_Bayes":
         model_name = 'GRU-ODE-Bayes'
         # get parameters for GRU-ODE-Bayes model
