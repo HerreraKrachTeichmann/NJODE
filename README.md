@@ -95,31 +95,66 @@ are saved in "../data/saved_models/id-x/plots/" for x=1,2,3.
 
 ## Empirical convergence study
 Models for the empirical convergence study were trained using parallel_train.py
-with the model parameters specified below:
+with the model parameters specified below
 ```
 # ==========================================================================
 # parallel training for convergence analysis
 # ==========================================================================
 ```
+in the main part of the file parallel_train.py.
+
 For training: uncomment the code below the model params and run the file.
 
-For evaluation after training use the function-calls: 
+
+## Heston dataset without Feller condition
+Models for the Heston dataset without Feller condition were trained using 
+parallel_train.py with the model parameters specified below
 ```
-plot_convergence_study(x_axis="training_size", x_log=True, y_log=True)
-plot_convergence_study(x_axis="network_size", x_log=True, y_log=True)
-``` 
-in extras.py.
+# ==========================================================================
+# parallel training for Heston without Feller
+# ==========================================================================
+```
+in the main part of the file parallel_train.py.
+
+For training: uncomment the code below the model params and run the file.
 
 
+## Combined stock models (regime switch)
+Models for the combined stock model dataset were trained using 
+parallel_train.py with the model parameters specified below
+```
+# ==========================================================================
+# parallel training for Combined stock models
+# ==========================================================================
+```
+in the main part of the file parallel_train.py.
 
+For training: uncomment the code below the model params and run the file.
+
+
+## Sine stock models (explicit time dependence)
+Models for the sine stock model dataset were trained using 
+parallel_train.py with the model parameters specified below
+```
+# ==========================================================================
+# parallel training for sine stock models
+# ==========================================================================
+```
+in the main part of the file parallel_train.py.
+
+For training: uncomment the code below the model params and run the file.
+
+    
 ## Comparison to GRU-ODE-Bayes on synthetic dataset
 Models for the comparison to GRU-ODE-Bayes were trained using parallel_train.py
-with the model parameters specified below:
+with the model parameters specified below
 ```
 # ==========================================================================
 # parallel training for GRU-ODE-Bayes
 # ==========================================================================
 ```
+in the main part of the file parallel_train.py.
+
 For training: uncomment the code below the model params and run the file.
 
 For easier evaluation after training, use the function-call:
@@ -152,12 +187,14 @@ away.
 
 Models for cross-validation on the climate dataset were trained using 
 parallel_train.py
-with the model parameters specified below:
+with the model parameters specified below
 ```
 # ==========================================================================
 # parallel training for GRU-ODE-Bayes
 # ==========================================================================
 ```
+in the main part of the file parallel_train.py.
+
 For training: uncomment the code below the model params and run the file.
 
 For performing/evaluating the cross-validation use the function-call:
@@ -182,6 +219,61 @@ get_climate_cross_validation(early_stop_after_epoch=100)
 in extras.py.
 
 
+## Training on Physionet Dataset
+The Physionet dataset that was used by 
+[Latent ODEs for Irregularly-Sampled Time Series](https://arxiv.org/abs/1907.03907)
+is downloaded and saved automatically when training for the first time. Moreover,
+the preprocessing steps provided in this paper are applied automatically.
+
+Models for validation on the Physionet dataset were trained using 
+parallel_train.py
+with the model parameters specified below
+```
+# ==========================================================================
+# parallel training on physionet dataset
+# ==========================================================================
+```
+in the main part of the file parallel_train.py.
+
+For training: uncomment the code below the model params and run the file.
+
+For performing/evaluating the validation (based on 5 runs) use the function-call:
+```
+# ------------ validation of physionet training -------------
+get_training_overview(
+    path='{}saved_models_physionet_comparison/'.format(train.data_path),
+    params_extract_desc=('dataset', 'network_size', 'dropout_rate',
+                         'hidden_size', 'data_index'),
+    val_test_params_extract=(("max", "epoch", "epoch", "epochs_trained"),
+                             ("min", "eval_metric",
+                              "eval_metric", "eval_metric_min"),
+                             ("min", "eval_metric_2",
+                              "eval_metric_2", "eval_metric_2_min"),
+                             )
+)
+
+get_cross_validation(
+    path='{}saved_models_physionet_comparison/'.format(train.data_path),
+    save_path='{}saved_models_physionet_comparison/'
+              'cross_val.csv'.format(train.data_path),
+    param_combinations=({'network_size': 50},
+                        {'network_size': 200},
+                        {'network_size': 400}),
+    val_test_params_extract=(("max", "epoch", "epoch", "epochs_trained"),
+                             ("min", "eval_metric",
+                              "eval_metric", "eval_metric_min"),
+                             ("min", "eval_metric_2",
+                              "eval_metric_2", "eval_metric_2_min"),
+                             ("last", "eval_metric_2",
+                              "eval_metric_2", "eval_metric_2_last"),
+                             ("min", "train_loss",
+                              "eval_metric_2", "eval_metric_2_eval_min"),
+                             ),
+    target_col=('eval_metric_min', 'eval_metric_2_min',
+                'eval_metric_2_last', 'eval_metric_2_eval_min')
+)
+``` 
+in extras.py.
     
 
 ## Results
@@ -209,12 +301,16 @@ Ornstein-Uhlenbeck:
 
 This code can be used in accordance with the LICENSE.txt.
 
-If you find this code useful, please cite our paper: [Neural Jump Ordinary Differential Equations](todo).
+If you find this code useful, please cite our paper: [Neural Jump Ordinary Differential Equations](https://arxiv.org/abs/2006.04727).
 
 
 
 ## Acknowledgements and References
-Parts of this code are base on the code of: https://github.com/edebrouwer/gru_ode_bayes, of the paper [GRU-ODE-Bayes](https://arxiv.org/abs/1905.12374).
+Parts of this code are based on and/or copied from the code of: 
+https://github.com/edebrouwer/gru_ode_bayes, of the paper 
+[GRU-ODE-Bayes: Continuous modeling of sporadically-observed time series](https://arxiv.org/abs/1905.12374)
+and the code of: https://github.com/YuliaRubanova/latent_ode, of the paper
+[Latent ODEs for Irregularly-Sampled Time Series](https://arxiv.org/abs/1907.03907).
 
 The GIFs of the training progress were generated with imageio:
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.3674137.svg)](https://doi.org/10.5281/zenodo.3674137)

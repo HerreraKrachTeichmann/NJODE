@@ -172,19 +172,29 @@ class ODEFunc(torch.nn.Module):
     implementing continuous update between observatios, f_{\theta} in paper
     """
     def __init__(self, input_size, hidden_size, ode_nn, dropout_rate=0.0,
-                 bias=True):
+                 bias=True, input_current_t=False):
         super().__init__()
+        self.input_current_t = input_current_t
 
         # create feed-forward NN, f(H,X,tau,t-tau)
+        add = 2
+        if input_current_t:
+            add = 3
         self.f = get_ffnn(
-            input_size=input_size+hidden_size+2, output_size=hidden_size,
+            input_size=input_size+hidden_size+add, output_size=hidden_size,
             nn_desc=ode_nn, dropout_rate=dropout_rate, bias=bias
         )
 
     def forward(self, x, h, tau, tdiff):
         # dimension should be (batch, input_size) for x, (batch, hidden) for h, 
         #    (batch, 1) for times
-        input_f = torch.cat([torch.tanh(x), torch.tanh(h), tau, tdiff], dim=1)
+        if self.input_current_t:
+            input_f = torch.cat(
+                [torch.tanh(x), torch.tanh(h), tau, tdiff, tau+tdiff], dim=1
+            )
+        else:
+            input_f = torch.cat([torch.tanh(x), torch.tanh(h), tau, tdiff],
+                                dim=1)
         df = self.f(input_f)
         return df
 
@@ -298,7 +308,7 @@ class NJODE(torch.nn.Module):
                     (0,1): exponential decay towards 0.5
         :param options: kwargs, used: kword "options" with arg a dict passed
                 from train.train (kwords: 'which_loss', 'residual_enc_dec',
-                'masked' are used)
+                'masked', 'input_current_t' are used)
         """
         super().__init__()
 
@@ -321,11 +331,18 @@ class NJODE(torch.nn.Module):
         else:
             self.residual_enc_dec = True
 
+        if 'input_current_t' in options1:
+            self.input_current_t = options1['input_current_t']
+        else:
+            self.input_current_t = False
+
         self.masked = False
         if 'masked' in options1:
             self.masked = options1['masked']
         
-        self.ode_f = ODEFunc(input_size, hidden_size, ode_nn, dropout_rate, bias)
+        self.ode_f = ODEFunc(
+            input_size, hidden_size, ode_nn, dropout_rate, bias,
+            input_current_t=self.input_current_t)
         self.encoder_map = FFNN(
             input_size, hidden_size, enc_nn, dropout_rate, bias,
             masked=self.masked,
@@ -535,7 +552,10 @@ class NJODE(torch.nn.Module):
             times, time_ptr, X.detach().numpy(), obs_idx.detach().numpy(),
             delta_t, T, start_X.detach().numpy(), n_obs_ot.detach().numpy(),
             return_path=True, get_loss=False)
-        eval_loss = diff_fun(path_y.detach().numpy(), true_path_y)
+
+        eval_loss = diff_fun(
+            path_y.detach().numpy(), true_path_y
+        )
         if return_paths:
             return eval_loss, path_t, true_path_t, path_y, true_path_y
         else:

@@ -15,11 +15,11 @@ import numpy as np
 import sys
 from torch.nn.utils.rnn import pack_padded_sequence
 
-sys.path.append("../GRU_ODE_Bayes/")
-try:
-    from .torchdiffeq.torchdiffeq import odeint
-except Exception:
-    from torchdiffeq.torchdiffeq import odeint
+# try:
+#     from torchdiffeq import odeint
+# except Exception:
+#     sys.path.append("../../gru_ode_bayes/")
+#     from torchdiffeq.torchdiffeq import odeint
 
 
 # GRU-ODE: Neural Negative Feedback ODE with Bayesian jumps
@@ -350,14 +350,14 @@ class NNFOwithBayesianJumps(torch.nn.Module):
             h = h + delta_t * self.gru_c(pk, k)
             p = self.p_model(h)
 
-        elif self.solver == "dopri5":
-            assert self.impute==False #Dopri5 solver is only compatible with autonomous ODE.
-            solution, eval_times, eval_vals = odeint(self.gru_c,h,torch.tensor([0,delta_t]),method=self.solver,options={"store_hist":self.store_hist})
-            if self.store_hist:
-                eval_ps = self.p_model(torch.stack([ev[0] for ev in eval_vals]))
-            eval_times = torch.stack(eval_times) + current_time
-            h = solution[1,:,:]
-            p = self.p_model(h)
+        # elif self.solver == "dopri5":
+        #     assert self.impute==False #Dopri5 solver is only compatible with autonomous ODE.
+        #     solution, eval_times, eval_vals = odeint(self.gru_c,h,torch.tensor([0,delta_t]),method=self.solver,options={"store_hist":self.store_hist})
+        #     if self.store_hist:
+        #         eval_ps = self.p_model(torch.stack([ev[0] for ev in eval_vals]))
+        #     eval_times = torch.stack(eval_times) + current_time
+        #     h = solution[1,:,:]
+        #     p = self.p_model(h)
         
         current_time += delta_t
         return h,p,current_time, eval_times, eval_ps

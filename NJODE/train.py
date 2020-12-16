@@ -21,7 +21,17 @@ import matplotlib.colors
 from torch.backends import cudnn
 import gc
 
-# from telegram_notifications import send_bot_message as SBM
+try:
+    from telegram_notifications import send_bot_message as SBM
+except Exception:
+    class Sbm:
+        def __init__(self):
+            pass
+        @staticmethod
+        def send_notification(text, *args, **kwargs):
+            print(text)
+    SBM = Sbm()
+
 
 
 
@@ -31,7 +41,7 @@ if 'ada-' not in socket.gethostname():
     SERVER = False
 else:
     SERVER = True
-    N_CPUS = 2
+    N_CPUS = 1
 print(socket.gethostname())
 print('SERVER={}'.format(SERVER))
 SEND = False
@@ -78,8 +88,9 @@ def train(
         hidden_size=10, bias=True, dropout_rate=0.1,
         ode_nn=default_ode_nn, readout_nn=default_readout_nn,
         enc_nn=default_enc_nn, use_rnn=False,
-        solver="euler", weight=1., weight_decay=0.999,
+        solver="euler", weight=0.5, weight_decay=1.,
         dataset='BlackScholes', dataset_id=None, plot=True, paths_to_plot=(0,),
+        saved_models_path=saved_models_path,
         **options
 ):
     """
@@ -119,6 +130,7 @@ def train(
     :param plot: bool, whethere to plot
     :param paths_to_plot: list of ints, which paths of the test-set should be
             plotted
+    :param saved_models_path: str, where to save the models
     :param options: kwargs, used keywords:
             'func_appl_X'   list of functions (as str, see data_utils)
                             to apply to X
@@ -129,9 +141,12 @@ def train(
             'plot_only'     bool, whether the model is used only to plot after
                             initiating or loading (i.e. no training) and exit
                             afterwards (used by demo)
+            'ylabels'       list of str, see plot_one_path_with_pred()
             'which_loss'    'standard' or 'easy', used by models.NJODE
             'residual_enc_dec'  bool, whether resNNs are used for encoder and
                                 readout NN, used by models.NJODE, default True
+            'input_current_t'   bool, whether to additionally input current time
+                                to the ODE function f
             'training_size' int, if given and smaller than
                             dataset_size*(1-test_size), then this is the umber
                             of samples used for the training set (randomly
@@ -181,7 +196,7 @@ def train(
                                         ODE-RNN this is done by the encoder)
     """
 
-    initial_print = ""
+    initial_print = "model-id: {}\n".format(model_id)
 
     if ANOMALY_DETECTION:
         torch.autograd.set_detect_anomaly(True)
@@ -229,7 +244,7 @@ def train(
         model_name=dataset, time_id=dataset_id, idx=train_idx)
     data_val = data_utils.IrregularDataset(
         model_name=dataset, time_id=dataset_id, idx=val_idx)
-    
+
     # get data-loader for training
     if 'func_appl_X' in options:
         functions = options['func_appl_X']
@@ -256,6 +271,9 @@ def train(
             plot_variance = options['plot_variance']
         if 'std_factor' in options:
             std_factor = options['std_factor']
+    ylabels = None
+    if 'ylabels' in options:
+        ylabels = options['ylabels']
 
     # get optimal eval loss
     #    TODO: this is not correct if other functions are applied to X
@@ -270,7 +288,7 @@ def train(
 
     # get params_dict
     params_dict = {
-        'input_size': input_size,
+        'input_size': input_size, 'epochs': epochs,
         'hidden_size': hidden_size, 'output_size': output_size, 'bias': bias,
         'ode_nn': ode_nn, 'readout_nn': readout_nn, 'enc_nn': enc_nn, 
         'use_rnn': use_rnn,
@@ -421,20 +439,20 @@ def train(
             path_to_plot=paths_to_plot, save_path=plot_save_path,
             filename=plot_filename, plot_variance=plot_variance,
             functions=functions, std_factor=std_factor,
-            model_name=model_name, save_extras=save_extras
+            model_name=model_name, save_extras=save_extras, ylabels=ylabels
         )
-        # if SEND:
-        #     files_to_send = []
-        #     caption = "{} - id={}".format(model_name, model_id)
-        #     for i in paths_to_plot:
-        #         files_to_send.append(
-        #             os.path.join(plot_save_path, plot_filename.format(i)))
-        #     SBM.send_notification(
-        #         text='finished plot-only: {}, id={}\n\n{}'.format(
-        #             model_name, model_id, desc),
-        #         files=files_to_send,
-        #         text_for_files=caption
-        #     )
+        if SEND:
+            files_to_send = []
+            caption = "{} - id={}".format(model_name, model_id)
+            for i in paths_to_plot:
+                files_to_send.append(
+                    os.path.join(plot_save_path, plot_filename.format(i)))
+            SBM.send_notification(
+                text='finished plot-only: {}, id={}\n\n{}'.format(
+                    model_name, model_id, desc),
+                files=files_to_send,
+                text_for_files=caption
+            )
         initial_print += '\noptimal eval-loss (with current weight={:.5f}): ' \
                          '{:.5f}'.format(model.weight, curr_opt_loss)
         print(initial_print)
@@ -445,11 +463,11 @@ def train(
     if model.epoch <= epochs:
         skip_training = False
 
-        # # send notification
-        # if SEND:
-        #     SBM.send_notification(
-        #         text='start training controlled ODE-RNN id={}'.format(model_id)
-        #     )
+        # send notification
+        if SEND:
+            SBM.send_notification(
+                text='start training - model id={}'.format(model_id)
+            )
         initial_print += '\n\nmodel overview:'
         print(initial_print)
         print(model, '\n')
@@ -574,7 +592,8 @@ def train(
                     path_to_plot=paths_to_plot, save_path=plot_save_path,
                     filename=plot_filename, plot_variance=plot_variance,
                     functions=functions, std_factor=std_factor,
-                    model_name=model_name, save_extras=save_extras
+                    model_name=model_name, save_extras=save_extras,
+                    ylabels=ylabels
                 )
                 print('optimal eval-loss (with current weight={:.5f}): '
                       '{:.5f}'.format(model.weight, curr_opt_loss))
@@ -604,20 +623,20 @@ def train(
         model.epoch += 1
         model.weight_decay_step()
 
-    # # send notification
-    # if SEND and not skip_training:
-    #     files_to_send = [model_metric_file]
-    #     caption = "{} - id={}".format(model_name, model_id)
-    #     if plot:
-    #         for i in paths_to_plot:
-    #             files_to_send.append(
-    #                 os.path.join(plot_save_path, plot_filename.format(i)))
-    #     SBM.send_notification(
-    #         text='finished training: {}, id={}\n\n{}'.format(
-    #             model_name, model_id, desc),
-    #         files=files_to_send,
-    #         text_for_files=caption
-    #     )
+    # send notification
+    if SEND and not skip_training:
+        files_to_send = [model_metric_file]
+        caption = "{} - id={}".format(model_name, model_id)
+        if plot:
+            for i in paths_to_plot:
+                files_to_send.append(
+                    os.path.join(plot_save_path, plot_filename.format(i)))
+        SBM.send_notification(
+            text='finished training: {}, id={}\n\n{}'.format(
+                model_name, model_id, desc),
+            files=files_to_send,
+            text_for_files=caption
+        )
 
     # delete model & free memory
     del model, dl, dl_val, data_train, data_val
@@ -655,7 +674,7 @@ def plot_one_path_with_pred(
         device, model, batch, stockmodel, delta_t, T,
         path_to_plot=(0,), save_path='', filename='plot_{}.pdf',
         plot_variance=False, functions=None, std_factor=1,
-        model_name=None,
+        model_name=None, ylabels=None,
         save_extras={'bbox_inches': 'tight', 'pad_inches': 0.01}
 ):
     """
@@ -678,10 +697,11 @@ def plot_one_path_with_pred(
     :param functions: list of functions (as str), the functions applied to X
     :param std_factor: float, the factor by which std is multiplied
     :param model_name: str or None, name used for model in plots
+    :param ylabels: None or list of str of same length as dimension of X
     :param save_extras: dict with extra options for saving plot
     :return: optimal loss
     """
-    if model_name is None:
+    if model_name is None or model_name == "NJODE":
         model_name = 'our model'
 
     prop_cycle = plt.rcParams['axes.prop_cycle']
@@ -698,7 +718,7 @@ def plot_one_path_with_pred(
     n_obs_ot = batch["n_obs_ot"].to(device)
     true_X = batch["true_paths"]
     observed_dates = batch['observed_dates']
-    path_t_true_X = np.linspace(0., T, int(T/delta_t)+1)
+    path_t_true_X = np.linspace(0., T, int(np.round(T/delta_t))+1)
     
     model.eval()
     res = model.get_pred(times, time_ptr, X, obs_idx, delta_t, T,
@@ -764,6 +784,8 @@ def plot_one_path_with_pred(
             axs[j].plot(path_t_true, path_y_true[:, i, j],
                         label='true conditional expectation',
                         linestyle=':', color=colors[2])
+            if ylabels:
+                axs[j].set_ylabel(ylabels[j])
 
         plt.legend()
         plt.xlabel('$t$')
@@ -777,21 +799,35 @@ def plot_one_path_with_pred(
 
 if __name__ == '__main__':
 
+    # dataset_id = 1590868206
+    # dataset_id = 1591027769
     dataset_id = None
-    dataset = "BlackScholes"
-    ode_nn = ((50, 'tanh'), (50, 'tanh'))
-    readout_nn = ((50, 'tanh'), (50, 'tanh'))
-    enc_nn = ((50, 'tanh'), (50, 'tanh'))
+    dataset = "combined_BlackScholes_Heston_OrnsteinUhlenbeck"
+    # dataset = "Heston"
+    # dataset = "HestonWOFeller"
+
+    # # create datasat if does not exists
+    # dataset_dict = data_utils.hyperparam_default
+    # dataset_dict['nb_paths'] = 20000
+    # datasetpath, dataset_id = data_utils.create_dataset(
+    #     stock_model_name=dataset)
+    # print('dataset stored as: {}'.format(datasetpath))
+
+    ode_nn = ((200, 'tanh'), (200, 'tanh'))
+    # readout_nn = ((50, 'tanh'), (50, 'tanh'))
+    # enc_nn = ((50, 'tanh'), (50, 'tanh'))
 
     train(model_id=None, epochs=100, batch_size=100, save_every=1,
           learning_rate=0.001, test_size=0.2, seed=398,
           hidden_size=10, bias=True, dropout_rate=0.1,
-          ode_nn=ode_nn, enc_nn=enc_nn,
-          readout_nn=readout_nn, use_rnn=False,
+          ode_nn=ode_nn, enc_nn=ode_nn,
+          readout_nn=ode_nn, use_rnn=False,
           which_loss='standard', residual_enc_dec=True,
           solver="euler", weight=0.5, weight_decay=1.,
           dataset=dataset, dataset_id=dataset_id, paths_to_plot=(0,1,2,3,4,),
           evaluate=True)
+
+
 
     # train GRU-ODE-Bayes
     train(model_id=None, epochs=100, batch_size=100, save_every=1,
@@ -807,6 +843,8 @@ if __name__ == '__main__':
           **{'GRU_ODE_Bayes-impute': True, 'GRU_ODE_Bayes-logvar': True,
              'GRU_ODE_Bayes-mixing': 0.0001}
           )
+
+
 
 
 

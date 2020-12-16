@@ -1,14 +1,14 @@
 """
 author: Florian Krach & Calypso Herrera
 
-code to train NJ-ODE on the climate data as provided in the official
-implementation of GRU-ODE-Bayes: https://github.com/edebrouwer/gru_ode_bayes.
-
-Parts of this code are copied from GRU-ODE-Bayes implementation.
+code to train NJ-ODE on the physionet dataset provided by paper:
+# Latent ODEs for Irregularly-Sampled Time Series
 """
+
 
 # =====================================================================================================================
 import torch
+import argparse
 import tqdm
 import numpy as np
 from torch.utils.data import DataLoader
@@ -42,7 +42,7 @@ if 'ada-' not in socket.gethostname():
     SERVER = False
 else:
     SERVER = True
-    N_CPUS = 1
+    N_CPUS = 3
 print(socket.gethostname())
 print('SERVER={}'.format(SERVER))
 SEND = False
@@ -54,13 +54,13 @@ sys.path.append("../")
 try:
     from . import models as models
     from . import data_utils as data_utils
-    from ..GRU_ODE_Bayes import data_utils_gru_ode_bayes as data_utils_gru
-    from ..GRU_ODE_Bayes import models_gru_ode_bayes as models_gru_ode_bayes
+    from ..latent_ODE import parse_datasets_LODE as parse_dataset
+    from ..latent_ODE import likelihood_eval_LODE as likelihood_eval
 except Exception:
     import NJODE.models as models
     import NJODE.data_utils as data_utils
-    import GRU_ODE_Bayes.data_utils_gru_ode_bayes as data_utils_gru
-    import GRU_ODE_Bayes.models_gru_ode_bayes as models_gru_ode_bayes
+    import latent_ODE.parse_datasets_LODE as parse_dataset
+    import latent_ODE.likelihood_eval_LODE as likelihood_eval
 import matplotlib.pyplot as plt
 
 
@@ -68,17 +68,16 @@ import matplotlib.pyplot as plt
 # Global variables
 data_path = data_utils.data_path
 train_data_path = data_utils.training_data_path
-saved_models_path = '{}saved_models/'.format(data_path)
+saved_models_path = '{}saved_models_physionet/'.format(data_path)
 
 METR_COLUMNS = ['epoch', 'train_time', 'eval_time', 'train_loss', 'eval_loss',
-                'eval_metric', 'test_loss', 'test_metric']
+                'eval_metric', 'eval_metric_2']
 default_ode_nn = ((50, 'tanh'), (50, 'tanh'))
 default_readout_nn = ((50, 'tanh'), (50, 'tanh'))
 default_enc_nn = ((50, 'tanh'), (50, 'tanh'))
 
 ANOMALY_DETECTION = False
 N_DATASET_WORKERS = 0
-
 
 
 # =====================================================================================================================
@@ -89,14 +88,15 @@ def makedirs(dirname):
 
 
 def train(
-        model_id=None, epochs=100, batch_size=100, save_every=1,
+        model_id=None, epochs=100, batch_size=50, save_every=1,
         learning_rate=0.001,
-        hidden_size=10, bias=True, dropout_rate=0.1,
+        hidden_size=41, bias=True, dropout_rate=0.1,
         ode_nn=default_ode_nn, readout_nn=default_readout_nn,
         enc_nn=default_enc_nn, use_rnn=False,
         solver="euler", weight=0.5, weight_decay=1.,
-        data_index=0, dataset='climate',
-        saved_models_path=saved_models_path,
+        dataset='physionet', saved_models_path=saved_models_path,
+        quantization=0.016, n_samples=8000,
+        eval_input_prob=None, eval_input_seed=3892,
         **options
 ):
     """
@@ -123,56 +123,31 @@ def train(
     :param solver: see models.NJODE
     :param weight: see models.NJODE
     :param weight_decay: see models.NJODE
-    :param data_index: int in {0,..,4}, which index set to use
     :param saved_models_path: str, where to save the models
+    :param quantization: the time-step size in the physionet dataset (1=1h,
+            0.016~1/60=1min)
+    :param eval_input_prob: None or float in [0,1], the probability for each of
+            the datapoints on the left out part of the eval set (second half of
+            time points) to be used as input during eval. for the evaluation,
+            the predicted value before this input is processed (i.e. before the
+            jump) is used.
+    :param eval_input_seed: None or int, seed for sampling from distribution,
+            when deciding which data points are used from left-out part of eval
+            set. If the seed is not None, in each call to the eval dataloader,
+            the same points will be included additionally as input.
     :param options: kwargs, used keywords:
             'parallel'      bool, used by parallel_train.parallel_training
             'resume_training'   bool, used by parallel_train.parallel_training
             'which_loss'    'standard' or 'easy', used by models.NJODE
             'residual_enc_dec'  bool, whether resNNs are used for encoder and
                                 readout NN, used by models.NJODE, default True
-            'delta_t'       float, default 0.1, to change stepsize of alg
+            'delta_t'       float, default equals quantization/48, which is the
+                            step size when the time scale is normalized to
+                            [0,1], to change stepsize of alg
             'load_best'     bool, whether to load the best checkpoint instead of
                             the last checkpoint when loading the model. Mainly
                             used for evaluating model at the best checkpoint.
-            'other_model'   one of {'GRU_ODE_Bayes'}; the specifieed model is
-                            trained instead of the controlled ODE-RNN model.
-                            Other options/inputs might change or loose their
-                            effect. The saved_models_path is changed to
-                            "{...}<model-name>-saved_models/" instead of
-                            "{...}saved_models/".
-                -> 'GRU_ODE_Bayes' has the following extra options with the
-                    names 'GRU_ODE_Bayes'+<option_name>, for the following list
-                    of possible choices for <options_name>:
-                    '-mixing'   float, default: 0.0001, weight of the 2nd loss
-                                term of GRU-ODE-Bayes
-                    '-solver'   one of {"euler", "midpoint", "dopri5"}, default:
-                                "euler"
-                    '-impute'   bool, default: False,
-                                whether to impute the last parameter
-                                estimation of the p_model for the next ode_step
-                                as input. the p_model maps (like the
-                                readout_map) the hidden state to the
-                                parameter estimation of the normal distribution.
-                    '-logvar'   bool, default: True, wether to use logarithmic
-                                (co)variace -> hardcodinng positivity constraint
-                    '-full_gru_ode'     bool, default: True,
-                                        whether to use the full GRU cell
-                                        or a smaller version, see GRU-ODE-Bayes
-                    '-p_hidden'         int, default: hidden_size, size of the
-                                        inner hidden layer of the p_model
-                    '-prep_hidden'      int, default: hidden_size, in the
-                                        observational cell (i.e. jumps) a prior
-                                        matrix multiplication transforms the
-                                        input to have the size
-                                        prep_hidden * input_size
-                    '-cov_hidden'       int, default: hidden_size, size of the
-                                        inner hidden layer of the covariate_map.
-                                        the covariate_map is used as a mapping
-                                        to get the initial h (for controlled
-                                        ODE-RNN this is done by the encoder)
     """
-
     initial_print = ""
     options['masked'] = True
 
@@ -197,52 +172,25 @@ def train(
         initial_print += '\nusing CPU'
 
     # get data
-    csv_file_path = os.path.join(
-        train_data_path, 'climate/small_chunked_sporadic.csv')
-    train_idx = np.load(os.path.join(
-        train_data_path,
-        'climate/small_chunk_fold_idx_{}/train_idx.npy'.format(data_index)
-        ), allow_pickle=True)
-    val_idx = np.load(os.path.join(
-        train_data_path,
-        'climate/small_chunk_fold_idx_{}/val_idx.npy'.format(data_index)
-        ), allow_pickle=True)
-    test_idx = np.load(os.path.join(
-        train_data_path,
-        'climate/small_chunk_fold_idx_{}/test_idx.npy'.format(data_index)
-        ), allow_pickle=True)
-    validation = True
-    val_options = {"T_val": 150, "max_val_samples": 3}
+    parser = argparse.ArgumentParser()
+    args = parser.parse_args([])
+    args_dict = vars(args)
+    args_dict["dataset"] = "physionet"
+    args_dict["n"] = n_samples
+    args_dict["quantization"] = quantization
+    args_dict["batch_size"] = batch_size
+    args_dict["classif"] = False
+    args_dict["eval_input_prob"] = eval_input_prob
+    args_dict["eval_input_seed"] = eval_input_seed
 
-    data_train = data_utils_gru.ODE_Dataset(csv_file=csv_file_path,
-                                            label_file=None,
-                                            cov_file=None, idx=train_idx)
-    data_val = data_utils_gru.ODE_Dataset(csv_file=csv_file_path,
-                                          label_file=None,
-                                          cov_file=None, idx=val_idx,
-                                          validation=validation,
-                                          val_options=val_options)
-    data_test = data_utils_gru.ODE_Dataset(csv_file=csv_file_path,
-                                           label_file=None,
-                                           cov_file=None, idx=test_idx,
-                                           validation=validation,
-                                           val_options=val_options)
+    data_objects = parse_dataset.parse_datasets(args, device)
 
-    # get data loaders
-    dl = DataLoader(
-        dataset=data_train, collate_fn=data_utils_gru.custom_collate_fn,
-        shuffle=True, batch_size=batch_size, num_workers=N_DATASET_WORKERS)
-    dl_val = DataLoader(
-        dataset=data_val, collate_fn=data_utils_gru.custom_collate_fn,
-        shuffle=True, batch_size=len(val_idx), num_workers=N_DATASET_WORKERS)
-    dl_test = DataLoader(
-        dataset=data_test, collate_fn=data_utils_gru.custom_collate_fn,
-        shuffle=True, batch_size=len(test_idx), num_workers=N_DATASET_WORKERS)
-
-    input_size = data_train.variable_num
+    dl = data_objects["train_dataloader"]
+    dl_test = data_objects["test_dataloader"]
+    input_size = data_objects["input_dim"]
     output_size = input_size
-    T = 200
-    delta_t = 0.1
+    T = 1 + 1e-12
+    delta_t = quantization/48.
     if "delta_t" in options:
         delta_t = options['delta_t']
 
@@ -254,8 +202,10 @@ def train(
         'ode_nn': ode_nn, 'readout_nn': readout_nn, 'enc_nn': enc_nn,
         'use_rnn': use_rnn,
         'dropout_rate': dropout_rate, 'batch_size': batch_size,
-        'solver': solver, 'data_index': data_index,
-        'learning_rate': learning_rate,
+        'solver': solver, 'dataset': dataset,
+        'quantization': quantization, 'n_samples': n_samples,
+        'eval_input_prob': eval_input_prob,
+        'learning_rate': learning_rate, 'eval_input_seed': eval_input_seed,
         'weight': weight, 'weight_decay': weight_decay,
         'options': options}
     desc = json.dumps(params_dict, sort_keys=True)
@@ -310,45 +260,6 @@ def train(
     if 'other_model' not in options:
         model = models.NJODE(**params_dict)
         model_name = 'NJ-ODE'
-    elif options['other_model'] == "GRU_ODE_Bayes":
-        model_name = 'GRU-ODE-Bayes'
-        # get parameters for GRU-ODE-Bayes model
-        hidden_size = params_dict['hidden_size']
-        mixing = 0.0001
-        if 'GRU_ODE_Bayes-mixing' in options:
-            mixing = options['GRU_ODE_Bayes-mixing']
-        solver = 'euler'
-        if 'GRU_ODE_Bayes-solver' in options:
-            solver = options['GRU_ODE_Bayes-solver']
-        impute = False
-        if 'GRU_ODE_Bayes-impute' in options:
-            impute = options['GRU_ODE_Bayes-impute']
-        logvar = True
-        if 'GRU_ODE_Bayes-logvar' in options:
-            logvar = options['GRU_ODE_Bayes-logvar']
-        full_gru_ode = True
-        if 'GRU_ODE_Bayes-full_gru_ode' in options:
-            full_gru_ode = options['GRU_ODE_Bayes-full_gru_ode']
-        p_hidden = hidden_size
-        if 'GRU_ODE_Bayes-p_hidden' in options:
-            p_hidden = options['GRU_ODE_Bayes-p_hidden']
-        prep_hidden = hidden_size
-        if 'GRU_ODE_Bayes-prep_hidden' in options:
-            prep_hidden = options['GRU_ODE_Bayes-prep_hidden']
-        cov_hidden = hidden_size
-        if 'GRU_ODE_Bayes-cov_hidden' in options:
-            cov_hidden = options['GRU_ODE_Bayes-cov_hidden']
-
-        model = models_gru_ode_bayes.NNFOwithBayesianJumps(
-            input_size=params_dict['input_size'],
-            hidden_size=params_dict['hidden_size'],
-            p_hidden=p_hidden, prep_hidden=prep_hidden,
-            bias=params_dict['bias'],
-            cov_size=params_dict['input_size'], cov_hidden=cov_hidden,
-            logvar=logvar, mixing=mixing,
-            dropout_rate=params_dict['dropout_rate'],
-            full_gru_ode=full_gru_ode, solver=solver, impute=impute,
-        )
     else:
         raise ValueError(
             "Invalid argument for (option) parameter 'other_model'."
@@ -391,7 +302,7 @@ def train(
         # send notification
         if SEND:
             SBM.send_notification(
-                text='start training climate: {} id={}'.format(
+                text='start training on physionet: {} id={}'.format(
                     model_name, model_id)
             )
         initial_print += '\n\nmodel overview:'
@@ -421,7 +332,7 @@ def train(
             X = b["X"].to(device)
             M = b["M"].to(device)
             obs_idx = b["obs_idx"]
-            b_size = len(b["pat_idx"])
+            b_size = b["batch_size"]
             unique_idx, counts = np.unique(
                 obs_idx.detach().numpy(), return_counts=True)
             n_obs_ot = np.zeros((b_size))
@@ -436,27 +347,24 @@ def train(
                     times, time_ptr, X, obs_idx, delta_t, T, start_X, n_obs_ot,
                     return_path=False, get_loss=True, M=M
                 )
-            elif options['other_model'] == "GRU_ODE_Bayes":
-                hT, loss, _, _ = model(
-                    times, time_ptr, X, M, obs_idx, delta_t, T, start_X,
-                    return_path=False, smoother=False
-                )
             else:
-                raise ValueError
+                raise ValueError("the other_model is not defined")
             loss.backward()
             optimizer.step()
         train_time = time.time() - t
 
         # -------- evaluation --------
         t = time.time()
-        loss_val, mse_val = evaluate_model(
-            model, dl_val, device, options, delta_t, T)
+        loss_val, mse_val, mse_val_2 = evaluate_model(
+            model, dl_test, device, options, delta_t, T)
         eval_time = time.time() - t
         train_loss = loss.detach().numpy()
 
         print("epoch {}, weight={:.5f}, train-loss={:.5f}, "
-              "eval-loss={:.5f}, eval-metric={:.5f}".format(
-            model.epoch, model.weight, train_loss, loss_val, mse_val))
+              "eval-loss={:.5f}, eval-metric={:.5f}, "
+              "eval-metric_2={:.5f}".format(
+            model.epoch, model.weight, train_loss, loss_val,
+            mse_val, mse_val_2))
 
         if mse_val < best_eval_metric:
             print('save new best model: last-best-metric: {:.5f}, '
@@ -465,13 +373,9 @@ def train(
             models.save_checkpoint(model, optimizer, model_path_save_best,
                                    model.epoch)
             best_eval_metric = mse_val
-        loss_test, mse_test = evaluate_model(
-            model, dl_test, device, options, delta_t, T)
-        print("test-loss={:.5f}, test-metric={:.5f}".format(
-            loss_test, mse_test))
 
         metric_app.append([model.epoch, train_time, eval_time, train_loss,
-                           loss_val, mse_val, loss_test, mse_test])
+                           loss_val, mse_val, mse_val_2])
 
         # save model
         if model.epoch % save_every == 0:
@@ -492,24 +396,25 @@ def train(
         files_to_send = [model_metric_file]
         caption = "{} - id={}".format(model_name, model_id)
         SBM.send_notification(
-            text='finished training on climate: {}, id={}\n\n{}'.format(
+            text='finished training on physionet: {}, id={}\n\n{}'.format(
                 model_name, model_id, desc),
             files=files_to_send,
             text_for_files=caption
         )
 
     # delete model & free memory
-    del model, dl, dl_val, dl_test, data_train, data_val, data_test
+    del model, dl, dl_test, data_objects
     gc.collect()
 
     return 0
-
 
 def evaluate_model(model, dl_val, device, options, delta_t, T):
     with torch.no_grad():
         loss_val = 0
         num_obs = 0
+        count = 0
         mse_val = 0
+        mse_val_2 = 0
         model.eval()  # set model in evaluation mode
         for i, b in enumerate(dl_val):
             times = b["times"]
@@ -517,7 +422,7 @@ def evaluate_model(model, dl_val, device, options, delta_t, T):
             X = b["X"].to(device)
             M = b["M"].to(device)
             obs_idx = b["obs_idx"]
-            b_size = len(b["pat_idx"])
+            b_size = b["batch_size"]
             unique_idx, counts = np.unique(
                 obs_idx.detach().numpy(), return_counts=True)
             n_obs_ot = np.zeros((b_size))
@@ -527,11 +432,10 @@ def evaluate_model(model, dl_val, device, options, delta_t, T):
             start_X = torch.tensor(
                 np.zeros((b_size, X.size()[1])), dtype=torch.float32)
 
-            if b["X_val"] is not None:
-                X_val     = b["X_val"].to(device)
-                M_val     = b["M_val"].to(device)
+            if b["vals_val"] is not None:
+                vals_val = b["vals_val"]
+                mask_val = b["mask_val"]
                 times_val = b["times_val"]
-                times_idx = b["index_val"]
 
             if 'other_model' not in options:
                 hT, e_loss, path_t, path_h, path_y = model(
@@ -539,71 +443,74 @@ def evaluate_model(model, dl_val, device, options, delta_t, T):
                     n_obs_ot, until_T=True,
                     return_path=True, get_loss=True, M=M
                 )
-            elif options['other_model'] == "GRU_ODE_Bayes":
-                hT, e_loss, class_pred, path_t, path_y, h_vec, _, _ = model(
-                    times, time_ptr, X, M, obs_idx, delta_t, T, start_X,
-                    return_path=True, smoother=False
-                )
             else:
                 raise ValueError
-            t_vec = np.around(
-                path_t, str(delta_t)[::-1].find(
-                    '.')).astype(np.float32)  # Round floating points error in the time vector.
-            p_val = data_utils_gru.extract_from_path(
-                t_vec, path_y, times_val, times_idx)
-            if 'other_model' not in options:
-                m = p_val
-            elif options['other_model'] == "GRU_ODE_Bayes":
-                m, v = torch.chunk(p_val, 2, dim=1)
-            mse_loss = (torch.pow(X_val - m, 2) * M_val).sum()
 
+            time_indices = get_comparison_times_ind(path_t, times_val)
+            path_y = path_y.detach().numpy()
+            path_y = path_y[time_indices, :, :]
+            path_y = np.transpose(path_y, (1, 0, 2))
+
+            mse_loss = (((path_y - vals_val)**2) * mask_val).sum()
             loss_val += e_loss.detach().numpy()
-            num_obs += M_val.sum().detach().numpy()
-            mse_val += mse_loss.detach().numpy()
+            num_obs += mask_val.sum()
+            count += 1
+            mse_val += mse_loss
+            mse_val_2 += torch.mean(
+                likelihood_eval.compute_masked_likelihood(
+                    torch.tensor(path_y, dtype=torch.float32).unsqueeze(0),
+                    torch.tensor(vals_val, dtype=torch.float32).unsqueeze(0),
+                    torch.tensor(mask_val, dtype=torch.float32).unsqueeze(0),
+                    likelihood_eval.mse
+                )
+            ).detach().numpy()
 
-        loss_val /= len(dl_val)
+        # TODO: it might be that latent ODE takes mean over all dimensions (not
+        #  only observed ones) -> maybe better too use their functions to
+        #  compute mse
         mse_val /= num_obs
-    return loss_val, mse_val
+        loss_val /= count
+        mse_val_2 /= count
+    return loss_val, mse_val, mse_val_2
 
 
 
+def get_comparison_times_ind(path_t, times_val):
+    """
+    function to get the indices from path_t at which its entries are closest to
+    the entries in times_val
+    :param path_t: np.array of times (floats)
+    :param times_val: np.array of times, s.t. each entry lies between
+            np.min(path_t) and np.max(path_t)
+    :return: array of indices of same length as times_val
+    """
 
+    assert np.min(path_t) < np.min(times_val) and \
+           np.max(path_t)+1e-10 > np.max(times_val), \
+        "mins: {}, {}, max: {}, {}".format(
+            np.min(path_t), np.min(times_val),
+            np.max(path_t), np.max(times_val)
+        )
 
+    indices = []
+    for t in times_val:
+        for i in range(len(path_t)-1):
+            if abs(path_t[i]-t) < 1e-10 or path_t[i] <= t < path_t[i+1]:
+                if abs(t - path_t[i]) <= abs(t - path_t[i+1]):
+                    indices.append(i)
+                else:
+                    indices.append(i+1)
+                break
+            elif i == len(path_t)-2:
+                indices.append(i + 1)
+                break
 
+    assert len(indices) == len(times_val)
 
-
+    return indices
 
 
 
 if __name__ == '__main__':
 
-    size = 50
-    ode_nn = ((size, 'tanh'), (size, 'tanh'))
-    readout_nn = ((size, 'tanh'), (size, 'tanh'))
-    enc_nn = ((size, 'tanh'), (size, 'tanh'))
-
-    train(model_id=None, epochs=100, batch_size=100, save_every=1,
-          learning_rate=0.001,
-          hidden_size=10, bias=True, dropout_rate=0.1,
-          ode_nn=ode_nn, enc_nn=enc_nn,
-          readout_nn=readout_nn, use_rnn=False,
-          which_loss='standard', residual_enc_dec=True,
-          solver="euler", weight=0.5, weight_decay=1.,
-          data_index=0, )
-
-
-
-    # train GRU-ODE-Bayes
-    train(model_id=None, epochs=100, batch_size=100, save_every=1,
-          learning_rate=0.001,
-          hidden_size=50, bias=True, dropout_rate=0.1,
-          ode_nn=None, enc_nn=None,
-          readout_nn=None, use_rnn=False,
-          residual_enc_dec=True,
-          solver="euler", weight=0.5, weight_decay=1.,
-          data_index=0,
-          other_model='GRU_ODE_Bayes',
-          **{'GRU_ODE_Bayes-impute': True, 'GRU_ODE_Bayes-logvar': True,
-             'GRU_ODE_Bayes-mixing': 0.0001}
-          )
-
+    pass

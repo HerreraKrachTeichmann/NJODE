@@ -11,6 +11,8 @@ import json, os, time, sys
 from torch.utils.data import Dataset
 import torch
 import socket
+import copy
+import pandas as pd
 
 sys.path.append("../")
 try:
@@ -24,7 +26,8 @@ hyperparam_default = {
     'drift': 2., 'volatility': 0.3, 'mean': 4,
     'speed': 2., 'correlation': 0.5, 'nb_paths': 10000, 'nb_steps': 100,
     'S0': 1, 'maturity': 1., 'dimension': 1, 
-    'obs_perc': 0.1
+    'obs_perc': 0.1,
+    'scheme': 'euler', 'return_vol': False, 'v0': 1,
 }
 
 
@@ -36,6 +39,23 @@ training_data_path = '{}training_data/'.format(data_path)
 
 
 # =====================================================================================================================
+def makedirs(dirname):
+    if not os.path.exists(dirname):
+        os.makedirs(dirname)
+
+
+def get_dataset_overview():
+    data_overview = '{}dataset_overview.csv'.format(
+        training_data_path)
+    makedirs(training_data_path)
+    if not os.path.exists(data_overview):
+        df_overview = pd.DataFrame(
+            data=None, columns=['name', 'id', 'description'])
+    else:
+        df_overview = pd.read_csv(data_overview, index_col=0)
+    return df_overview, data_overview
+
+
 def create_dataset(
         stock_model_name="BlackScholes", 
         hyperparam_dict=hyperparam_default,
@@ -48,6 +68,8 @@ def create_dataset(
     :return: str (path where the dataset is saved), int (time_id to identify
                 the dataset)
     """
+    df_overview, data_overview = get_dataset_overview()
+
     np.random.seed(seed=seed)
     hyperparam_dict['model_name'] = stock_model_name
     obs_perc = hyperparam_dict['obs_perc']
@@ -61,11 +83,19 @@ def create_dataset(
     time_id = int(time.time())
     file_name = '{}-{}'.format(stock_model_name, time_id)
     path = '{}{}/'.format(training_data_path, file_name)
+    desc = json.dumps(hyperparam_dict, sort_keys=True)
     if os.path.exists(path):
         print('Path already exists - abort')
         raise ValueError
+    df_app = pd.DataFrame(
+        data=[[stock_model_name, time_id, desc]],
+        columns=['name', 'id', 'description']
+    )
+    df_overview = pd.concat([df_overview, df_app],
+                            ignore_index=True)
+    df_overview.to_csv(data_overview)
 
-    hyperparam_dict['dt'] =  dt
+    hyperparam_dict['dt'] = dt
     os.makedirs(path)
     with open('{}data.npy'.format(path), 'wb') as f:
         np.save(f, stock_paths)
@@ -73,6 +103,94 @@ def create_dataset(
         np.save(f, nb_obs)
     with open('{}metadata.txt'.format(path), 'w') as f:
         json.dump(hyperparam_dict, f, sort_keys=True)
+
+    # stock_path dimension: [nb_paths, dimension, time_steps]
+    return path, time_id
+
+
+def create_combined_dataset(
+        stock_model_names=("BlackScholes", "OrnsteinUhlenbeck"),
+        hyperparam_dicts=(hyperparam_default, hyperparam_default),
+        seed=0):
+    """
+    create a synthetic dataset using one of the stock-models
+    :param stock_model_names: list of str, each str is a name of a stockmodel,
+            see _STOCK_MODELS
+    :param hyperparam_dicts: list of dict, each dict contains all needed
+            parameters for the model
+    :param seed: int, random seed for the generation of the dataset
+    :return: str (path where the dataset is saved), int (time_id to identify
+                the dataset)
+    """
+    df_overview, data_overview = get_dataset_overview()
+
+    assert len(stock_model_names) == len(hyperparam_dicts)
+    np.random.seed(seed=seed)
+
+    # start to create paths from first model
+    filename = 'combined_{}'.format(stock_model_names[0])
+    maturity = hyperparam_dicts[0]['maturity']
+    hyperparam_dicts[0]['model_name'] = stock_model_names[0]
+    obs_perc = hyperparam_dicts[0]['obs_perc']
+    stockmodel = _STOCK_MODELS[stock_model_names[0]](**hyperparam_dicts[0])
+    stock_paths, dt = stockmodel.generate_paths()
+    last = stock_paths[:, :, -1]
+
+    # for every other model, add the paths created with this model starting at
+    #   last point of previous model
+    for i in range(1, len(stock_model_names)):
+        dt_last = dt
+        assert hyperparam_dicts[i]['dimension'] == \
+               hyperparam_dicts[i-1]['dimension']
+        assert hyperparam_dicts[i]['nb_paths'] == \
+               hyperparam_dicts[i-1]['nb_paths']
+        filename += '_{}'.format(stock_model_names[i])
+        maturity += hyperparam_dicts[i]['maturity']
+        hyperparam_dicts[i]['model_name'] = stock_model_names[i]
+        obs_perc = hyperparam_dicts[0]['obs_perc']
+        stockmodel = _STOCK_MODELS[stock_model_names[i]](**hyperparam_dicts[i])
+        _stock_paths, dt = stockmodel.generate_paths(start_X=last)
+        assert dt_last == dt
+        last = _stock_paths[:, :, -1]
+        stock_paths = np.concatenate(
+            [stock_paths, _stock_paths[:, :, 1:]], axis=2
+        )
+
+    size = stock_paths.shape
+    observed_dates = np.random.random(size=(size[0], size[2]))
+    observed_dates = (observed_dates < obs_perc)*1
+    nb_obs = np.sum(observed_dates[:, 1:], axis=1)
+
+    time_id = int(time.time())
+    file_name = '{}-{}'.format(filename, time_id)
+    path = '{}{}/'.format(training_data_path, file_name)
+    if os.path.exists(path):
+        print('Path already exists - abort')
+        raise ValueError
+
+    metadata = {'dt': dt, 'maturity': maturity,
+                'dimension': hyperparam_dicts[0]['dimension'],
+                'nb_paths': hyperparam_dicts[0]['nb_paths'],
+                'model_name': 'combined',
+                'stock_model_names': stock_model_names,
+                'hyperparam_dicts': hyperparam_dicts}
+    desc = json.dumps(metadata, sort_keys=True)
+
+    df_app = pd.DataFrame(
+        data=[[filename, time_id, desc]],
+        columns=['name', 'id', 'description']
+    )
+    df_overview = pd.concat([df_overview, df_app],
+                            ignore_index=True)
+    df_overview.to_csv(data_overview)
+
+    os.makedirs(path)
+    with open('{}data.npy'.format(path), 'wb') as f:
+        np.save(f, stock_paths)
+        np.save(f, observed_dates)
+        np.save(f, nb_obs)
+    with open('{}metadata.txt'.format(path), 'w') as f:
+        json.dump(metadata, f, sort_keys=True)
 
     return path, time_id
 
@@ -88,10 +206,13 @@ def _get_time_id(stock_model_name="BlackScholes", time_id=None):
         l = os.listdir(training_data_path)
         models = []
         for ll in l:
-            if stock_model_name in ll:
+            if stock_model_name == ll.split('-')[0]:
                 models.append(ll)
         times = [int(x.split('-')[1]) for x in models]
-        time_id = np.max(times)
+        if len(times) > 0:
+            time_id = np.max(times)
+        else:
+            time_id = None
     return time_id
 
 
@@ -305,5 +426,30 @@ def CustomCollateFnGen(func_names=None):
 
 
 if __name__ == '__main__':
+    # create_dataset()
+    #
+    # r = load_dataset()
+    # for rr in r:
+    #     print(rr)
+
+
+    # dat = IrregularDataset(model_name='BlackScholes')
+    # dl = DataLoader(dataset=dat, collate_fn=custom_collate_fn, shuffle=True, batch_size=5,
+    #                 num_workers=1)
+    # for b in dl:
+    #     print(b)
+    #     break
+
+
+    # h = hyperparam_default
+    # h['mean'] = 1
+    # h['speed'] = 2
+    # h['volatility'] = 3
+    # h['return_vol'] = True
+    # h['dimension'] = 2
+    # h['nb_paths'] = 100
+    # create_dataset('HestonWOFeller', hyperparam_dict=h)
+
+
 
     pass

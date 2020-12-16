@@ -1,7 +1,7 @@
 """
 author: Florian Krach & Calypso Herrera
 
-code for all additional things, like plotting, getting overviews etc.
+code for aall additional things, like plotting, getting overviews etc.
 """
 
 
@@ -15,7 +15,7 @@ import socket
 import matplotlib
 import matplotlib.colors
 
-# from telegram_notifications import send_bot_message as SBM
+from telegram_notifications import send_bot_message as SBM
 
 if 'ada-' not in socket.gethostname():
     SERVER = False
@@ -223,12 +223,12 @@ def plot_convergence_study(
     save_file = "{}convergence_{}.png".format(save_path, x_axis)
     plt.savefig(save_file, **save_extras)
 
-    # if SEND:
-    #     files_to_send = [save_file]
-    #     SBM.send_notification(
-    #         text_for_files='convergence plot',
-    #         files=files_to_send
-    #     )
+    if SEND:
+        files_to_send = [save_file]
+        SBM.send_notification(
+            text_for_files='convergence plot',
+            files=files_to_send
+        )
 
 
 def get_training_overview(
@@ -336,19 +336,19 @@ def get_training_overview(
             save_file = "{}model_overview-training_results.csv".format(path)
         df.to_csv(save_file)
 
-    # if SEND and save_file is not False:
-    #     files_to_send = [save_file]
-    #     SBM.send_notification(
-    #         text=None,
-    #         text_for_files='training overview',
-    #         files=files_to_send
-    #     )
+    if SEND and save_file is not False:
+        files_to_send = [save_file]
+        SBM.send_notification(
+            text=None,
+            text_for_files='training overview',
+            files=files_to_send
+        )
 
     return df
 
 
 def plot_paths_from_checkpoint(
-        model_ids=(1,), which='best', paths_to_plot=(0,)
+        model_ids=(1,), which='best', paths_to_plot=(0,), **options
 ):
     """
     function to plot paths (using plot_one_path_with_pred) from a saved model
@@ -356,6 +356,7 @@ def plot_paths_from_checkpoint(
     :param model_ids: list of int, the ids of the models to load and plot
     :param which: one of {'best', 'last', 'both'}, which checkpoint to load
     :param path_to_plot: list of int, see train.train.py
+    :param options: feed directly to train
     :return:
     """
     model_overview_file_name = '{}model_overview.csv'.format(
@@ -378,6 +379,8 @@ def plot_paths_from_checkpoint(
             params_dict['plot_only'] = True
             params_dict['paths_to_plot'] = paths_to_plot
             params_dict['parallel'] = True
+            for key in options:
+                params_dict[key] = options[key]
 
             if which in ['best', 'both']:
                 params_dict['load_best'] = True
@@ -432,14 +435,14 @@ def plot_loss_and_metric(
         plt.savefig(save_path, **save_extras)
         plt.close(fig)
 
-        # if SEND:
-        #     SBM.send_notification(
-        #         text=None, files=[save_path],
-        #         text_for_files="loss and metric plot - id={}".format(model_id)
-        #     )
+        if SEND:
+            SBM.send_notification(
+                text=None, files=[save_path],
+                text_for_files="loss and metric plot - id={}".format(model_id)
+            )
 
 
-def get_climate_cross_validation(
+def get_cross_validation(
         params_extract_desc=('dataset', 'network_size', 'dropout_rate',
                              'hidden_size', 'activation_function_1'),
         val_test_params_extract=(("min", "eval_metric",
@@ -454,13 +457,33 @@ def get_climate_cross_validation(
                              'dropout_rate': 0.1,
                              'hidden_size': 10,
                              'dataset': 'climate'},
+                            {'network_size': 200,
+                             'activation_function_1': 'tanh',
+                             'dropout_rate': 0.1,
+                             'hidden_size': 10,
+                             'dataset': 'climate'},
                             {'network_size': 400,
                              'activation_function_1': 'tanh',
                              'dropout_rate': 0.1,
                              'hidden_size': 50,
                              'dataset': 'climate'},
-                            ),
-        save_path="{}climate_cross_val.csv".format(train.saved_models_path)
+                            {'network_size': 50,
+                             'activation_function_1': 'relu',
+                             'dropout_rate': 0.2,
+                             'hidden_size': 50,
+                             'dataset': 'climate'},
+                            {'network_size': 100,
+                             'activation_function_1': 'relu',
+                             'dropout_rate': 0.2,
+                             'hidden_size': 50,
+                             'dataset': 'climate'},
+                            {'network_size': 400,
+                             'activation_function_1': 'relu',
+                             'dropout_rate': 0.2,
+                             'hidden_size': 10,
+                             'dataset': 'climate'}),
+        save_path="{}climate_cross_val.csv".format(train.saved_models_path),
+        path=train.saved_models_path
 ):
     """
     function to get the cross validation of the climate dataset
@@ -474,9 +497,11 @@ def get_climate_cross_validation(
             (mean is then taken over all other params that are not specfied,
             where the specifiied params are the same)
     :param save_path: str, where to save the output file
+    :param path: str, path where models are saved
     :return: pd.DataFrame with cross val mean and std
     """
     df = get_training_overview(
+        path=path,
         params_extract_desc=params_extract_desc,
         val_test_params_extract=val_test_params_extract,
         early_stop_after_epoch=early_stop_after_epoch,
@@ -502,20 +527,127 @@ def get_climate_cross_validation(
         data=data, columns=columns)
     df_out.to_csv(save_path)
 
-    # if SEND:
-    #     SBM.send_notification(
-    #         text=None, files=[save_path],
-    #         text_for_files="climate cross validation"
-    #     )
+    if SEND:
+        SBM.send_notification(
+            text=None, files=[save_path],
+            text_for_files="cross validation"
+        )
 
     return df_out
 
 
 if __name__ == '__main__':
+    # plot_losses(['/Users/Flo/Code/GitRepos/ControlledODERNN/data/saved_models/id-1/metric_id-1.csv',
+    #              '/Users/Flo/Code/GitRepos/ControlledODERNN/data/saved_models/id-2/metric_id-2.csv',
+    #              '/Users/Flo/Code/GitRepos/ControlledODERNN/data/saved_models/id-3/metric_id-3.csv'],
+    #             ['Black-Scholes', 'Heston', 'Ornstein-Uhlenbeck'],
+    #             filename='relative_difference.pdf', path='/Users/Flo/Desktop/',
+    #             ylab='relative loss', fig_size=(8,4))
+
+
+    # generate_training_progress_gif(6, which_path=0)
+
+
+    # plot_convergence_study(x_axis="training_size", x_log=True, y_log=True)
+    # plot_convergence_study(x_axis="network_size", x_log=True, y_log=True)
+
+
+    # get_training_overview(
+    #     params_extract_desc=('dataset', 'dataset_id', "other_model",
+    #                          'network_size', 'training_size',
+    #                          'hidden_size', "GRU_ODE_Bayes-mixing",
+    #                          "GRU_ODE_Bayes-logvar", "GRU_ODE_Bayes-impute",
+    #                          "GRU_ODE_Bayes-mixing"),
+    #     val_test_params_extract=(("max", "epoch", "epoch", "epochs_trained"),
+    #                              ("min", "evaluation_mean_diff",
+    #                               "evaluation_mean_diff", "eval_metric_min"),
+    #                              ("last", "evaluation_mean_diff",
+    #                               "evaluation_mean_diff", "eval_metric_last"),
+    #                              ("average", "evaluation_mean_diff",
+    #                               "evaluation_mean_diff", "eval_metric_average")
+    #                              )
+    # )
+
+
+    # for model_id in (2, 16, 12, 49, 50, 51):
+    #     plot_paths_from_checkpoint(
+    #         model_ids=(model_id,), which='both',
+    #         paths_to_plot=(0, 1, 2, 3, 4)
+    #     )
+    #     time.sleep(60)
+
+    # plot_loss_and_metric(model_ids=(2, 16, 12, 49, 50, 51))
+
+
+    # # ------------ validation of climate training -------------
+    # path = '{}saved_models_climate2/'.format(train.data_path)
+    # get_training_overview(
+    #     path=path,
+    #     params_extract_desc=('dataset', 'network_size', 'dropout_rate',
+    #                          'hidden_size', 'data_index'),
+    #     val_test_params_extract=(("max", "epoch", "epoch", "epochs_trained"),
+    #                              ("min", "eval_metric",
+    #                               "eval_metric", "eval_metric_min"),
+    #                              ("min", "test_metric",
+    #                               "test_metric", "test_metric_min"),
+    #                              ("min", "eval_metric",
+    #                               "test_metric", "test_metric_evaluation_min"),
+    #                              ("min", "eval_loss",
+    #                               "test_metric", "test_metric_eval_loss_min"),
+    #                              )
+    # )
+    # get_cross_validation(
+    #     path=path, save_path='{}cross_val.csv'.format(path),
+    #     early_stop_after_epoch=100,
+    #     param_combinations=({'hidden_size': 10},
+    #                         {'hidden_size': 50})
+    # )
+
+
+
+    # plot_paths_from_checkpoint(
+    #     model_ids=(2,), which='last', paths_to_plot=(0, 1, 2, 3),
+    #     ylabels=('X', 'v'),
+    #     save_extras={'bbox_inches': 'tight', 'pad_inches': 0.01},
+    # )
+
+
+
+    # # ------------ validation of physionet training -------------
+    # get_training_overview(
+    #     path='{}saved_models_physionet_comparison/'.format(train.data_path),
+    #     params_extract_desc=('dataset', 'network_size', 'dropout_rate',
+    #                          'hidden_size', 'data_index'),
+    #     val_test_params_extract=(("max", "epoch", "epoch", "epochs_trained"),
+    #                              ("min", "eval_metric",
+    #                               "eval_metric", "eval_metric_min"),
+    #                              ("min", "eval_metric_2",
+    #                               "eval_metric_2", "eval_metric_2_min"),
+    #                              )
+    # )
+    #
+    # get_cross_validation(
+    #     path='{}saved_models_physionet_comparison/'.format(train.data_path),
+    #     save_path='{}saved_models_physionet_comparison/'
+    #               'cross_val.csv'.format(train.data_path),
+    #     param_combinations=({'network_size': 50},
+    #                         {'network_size': 200}),
+    #     val_test_params_extract=(("max", "epoch", "epoch", "epochs_trained"),
+    #                              ("min", "eval_metric",
+    #                               "eval_metric", "eval_metric_min"),
+    #                              ("min", "eval_metric_2",
+    #                               "eval_metric_2", "eval_metric_2_min"),
+    #                              ("last", "eval_metric_2",
+    #                               "eval_metric_2", "eval_metric_2_last"),
+    #                              ("min", "train_loss",
+    #                               "eval_metric_2", "eval_metric_2_eval_min"),
+    #                              ),
+    #     target_col=('eval_metric_min', 'eval_metric_2_min',
+    #                 'eval_metric_2_last', 'eval_metric_2_eval_min')
+    # )
 
 
     pass
-
 
 
 
