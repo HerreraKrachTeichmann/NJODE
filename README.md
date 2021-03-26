@@ -1,7 +1,7 @@
 # Neural Jump Ordinary Differential Equations
 
 This repository is the official implementation of 
-[Neural Jump Ordinary Differential Equations](https://arxiv.org/abs/2006.04727). 
+[Neural Jump Ordinary Differential Equations: Consistent Continuous-Time Prediction and Filtering](https://openreview.net/forum?id=JFKR3WqwyXR). 
 
 
 ## Requirements
@@ -301,7 +301,7 @@ Ornstein-Uhlenbeck:
 
 This code can be used in accordance with the LICENSE.txt.
 
-If you find this code useful, please cite our paper: [Neural Jump Ordinary Differential Equations](https://arxiv.org/abs/2006.04727).
+If you find this code useful, please cite our paper: [Neural Jump Ordinary Differential Equations: Consistent Continuous-Time Prediction and Filtering](https://openreview.net/forum?id=JFKR3WqwyXR).
 
 
 
