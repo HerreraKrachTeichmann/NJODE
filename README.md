@@ -3,6 +3,13 @@
 This repository is the official implementation of 
 [Neural Jump Ordinary Differential Equations: Consistent Continuous-Time Prediction and Filtering](https://openreview.net/forum?id=JFKR3WqwyXR). 
 
+For a short summary of the paper see our video-presentation at the 
+[ICLR conference](https://iclr.cc/virtual/2021/poster/3339).
+Below we also provide the poster summarizing our work that we presented there.
+
+![alt text](ICLR-conference-material/NJODE_poster.png)
+
+
 
 ## Requirements
 
@@ -303,6 +310,16 @@ This code can be used in accordance with the LICENSE.txt.
 
 If you find this code useful, please cite our paper: [Neural Jump Ordinary Differential Equations: Consistent Continuous-Time Prediction and Filtering](https://openreview.net/forum?id=JFKR3WqwyXR).
 
+```
+@inproceedings{
+herrera2021neural,
+title={Neural Jump Ordinary Differential Equations: Consistent Continuous-Time Prediction and Filtering},
+author={Calypso Herrera and Florian Krach and Josef Teichmann},
+booktitle={International Conference on Learning Representations},
+year={2021},
+url={https://openreview.net/forum?id=JFKR3WqwyXR}
+}
+```
 
 
 ## Acknowledgements and References
