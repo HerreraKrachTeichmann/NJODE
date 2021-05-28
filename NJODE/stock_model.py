@@ -209,15 +209,14 @@ class Heston(StockModel):
                 var_paths[i, :, k] = (
                         var_paths[i, :, k - 1]
                         + var_drift(var_paths[i, :, k - 1], (k) * dt) * dt
-                        + np.dot(
-                    var_diffusion(var_paths[i, :, k - 1], (k) * dt), dZ))
+                        + var_diffusion(var_paths[i, :, k - 1], (k) * dt) * dZ)
 
                 spot_paths[i, :, k] = (
                         spot_paths[i, :, k - 1]
                         + spot_drift(spot_paths[i, :, k - 1], (k-1) * dt) * dt
-                        + np.dot(spot_diffusion(spot_paths[i, :, k - 1],
+                        + spot_diffusion(spot_paths[i, :, k - 1],
                                                 var_paths[i, :, k],
-                                                (k) * dt), dW))
+                                                (k) * dt) * dW)
         # stock_path dimension: [nb_paths, dimension, time_steps]
         return spot_paths, dt
 
@@ -320,13 +319,12 @@ class HestonWOFeller(StockModel):
                             np.log(spot_paths[i, :, k - 1])
                             + log_spot_drift(
                                 var_paths[i, :, k - 1], (k-1)*dt) * dt
-                            + np.dot(
-                                log_spot_diffusion(var_paths[i, :, k - 1]), dW)
+                            + log_spot_diffusion(var_paths[i, :, k - 1]) * dW
                     )
                     var_paths[i, :, k] = (
                             var_paths[i, :, k - 1]
                             + var_drift(var_paths[i, :, k - 1]) * dt
-                            + np.dot(var_diffusion(var_paths[i, :, k - 1]), dZ)
+                            + var_diffusion(var_paths[i, :, k - 1]) * dZ
                     )
             if self.retur_vol:
                 spot_paths = np.concatenate([spot_paths, var_paths], axis=1)
@@ -372,8 +370,7 @@ class BlackScholes(StockModel):
                 spot_paths[i, :, k] = (
                         spot_paths[i, :, k - 1]
                         + drift(spot_paths[i, :, k - 1], (k-1) * dt) * dt
-                        + np.dot(diffusion(spot_paths[i, :, k - 1], (k) * dt),
-                                 dW))
+                        + diffusion(spot_paths[i, :, k - 1], (k) * dt) * dW)
         # stock_path dimension: [nb_paths, dimension, time_steps]
         return spot_paths, dt
 
@@ -416,8 +413,7 @@ class OrnsteinUhlenbeck(StockModel):
                 spot_paths[i, :, k] = (
                         spot_paths[i, :, k - 1]
                         + drift(spot_paths[i, :, k - 1], (k-1) * dt) * dt
-                        + np.dot(diffusion(spot_paths[i, :, k - 1], (k) * dt),
-                                 dW))
+                        + diffusion(spot_paths[i, :, k - 1], (k) * dt) * dW)
         # stock_path dimension: [nb_paths, dimension, time_steps]
         return spot_paths, dt
 
