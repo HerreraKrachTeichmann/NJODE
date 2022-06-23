@@ -197,7 +197,7 @@ parallel_train.py
 with the model parameters specified below
 ```
 # ==========================================================================
-# parallel training for GRU-ODE-Bayes
+# parallel training on climate dataset
 # ==========================================================================
 ```
 in the main part of the file parallel_train.py.

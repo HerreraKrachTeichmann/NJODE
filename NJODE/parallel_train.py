@@ -426,7 +426,7 @@ if __name__ == '__main__':
 
 
     # ==========================================================================
-    # parallel training on climate dataset for cross validation
+    # parallel training on climate dataset
     # ==========================================================================
     params_list = []
     size = 50
