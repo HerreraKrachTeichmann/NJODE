@@ -35,7 +35,7 @@ opt-einsum==3.3.0
 pandas==1.0.4
 pdf2image==1.13.1
 Pillow==7.1.2
-protobuf==3.14.0
+protobuf==3.18.3
 pyasn1==0.4.8
 pyasn1-modules==0.2.8
 pycparser==2.20
