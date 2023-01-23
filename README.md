@@ -1,5 +1,7 @@
 # Neural Jump Ordinary Differential Equations
 
+[![DOI](https://zenodo.org/badge/269355048.svg)](https://zenodo.org/badge/latestdoi/269355048)
+
 This repository is the official implementation of 
 [Neural Jump Ordinary Differential Equations: Consistent Continuous-Time Prediction and Filtering](https://openreview.net/forum?id=JFKR3WqwyXR). 
 
