@@ -64,7 +64,7 @@ tornado==6.0.4
 tqdm==4.46.1
 typing-extensions==3.7.4.3
 urllib3==1.25.10
-Werkzeug==1.0.1
+Werkzeug==2.2.3
 wrapt==1.12.1
 yarl==1.5.1
 zipp==3.4.0
